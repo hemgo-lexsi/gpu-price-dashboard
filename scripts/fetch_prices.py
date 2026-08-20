@@ -19,6 +19,7 @@ Python 3.9+ on any GitHub Actions runner or a laptop).
 
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -57,10 +58,40 @@ def log(msg):
     print(f"[{now_iso()}] {msg}", flush=True)
 
 
-def http_get(url, headers=None):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+
+def http_get(url, headers=None, browser=False):
+    ua = BROWSER_UA if browser else USER_AGENT
+    req = urllib.request.Request(url, headers={"User-Agent": ua, **(headers or {})})
     with urllib.request.urlopen(req, timeout=TIMEOUT, context=SSL_CTX) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def html_to_text(html):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+
+
+def scrape_token_prices(text, tokens, window=70, lo=0.05, hi=30):
+    """Return {token: price} by finding each token's nearest following $price."""
+    out = {}
+    low = text.lower()
+    for tok in tokens:
+        start = 0
+        while True:
+            i = low.find(tok.lower(), start)
+            if i == -1:
+                break
+            seg = text[i + len(tok): i + len(tok) + window]
+            pm = re.search(r"\$?\s*([0-9]{1,2}\.[0-9]{2})", seg)
+            if pm:
+                p = float(pm.group(1))
+                if lo <= p <= hi:
+                    out[tok] = p
+                    break
+            start = i + len(tok)
+    return out
 
 
 def http_post_json(url, payload, headers=None):
@@ -274,6 +305,172 @@ def fetch_runpod():
 
 
 # ---------------------------------------------------------------------------
+# Verda (formerly DataCrunch) — public keyless API, on-demand + spot
+# ---------------------------------------------------------------------------
+def _mk(provider, ptype, url, source, gpu_raw, vram, billing, usd, source_kind="live"):
+    fam, label, vg = normalize_gpu(gpu_raw, vram)
+    return {
+        "provider": provider, "provider_type": ptype, "gpu": fam, "gpu_label": label,
+        "vram_gb": vram or vg, "billing": billing, "region": "Global (lowest)", "country": "Global",
+        "currency": "USD", "usd_per_hr": round(float(usd), 4), "num_gpus": 1,
+        "source": source, "source_kind": source_kind, "url": url,
+    }
+
+
+def fetch_verda():
+    data = json.loads(http_get("https://api.datacrunch.io/v1/instance-types"))
+    best = {}  # (fam, billing) -> record with min per-GPU price
+    for t in data:
+        g = t.get("gpu") or {}
+        n = g.get("number_of_gpus") or 0
+        if n < 1:
+            continue
+        vram = (t.get("gpu_memory") or {}).get("size_in_gigabytes")
+        for field, billing in (("price_per_hour", "on-demand"), ("spot_price", "spot")):
+            raw = t.get(field)
+            try:
+                per = float(raw) / n
+            except (TypeError, ValueError):
+                continue
+            if per <= 0:
+                continue
+            rec = _mk("Verda (DataCrunch)", "neocloud", "https://verda.com/pricing", "verda",
+                      g.get("description", ""), vram, billing, per)
+            key = (rec["gpu"], billing)
+            if key not in best or per < best[key]["usd_per_hr"]:
+                best[key] = rec
+    recs = list(best.values())
+    log(f"Verda ok: {len(recs)} offers")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# Akamai (Linode) — public keyless API
+# ---------------------------------------------------------------------------
+def fetch_akamai():
+    data = json.loads(http_get("https://api.linode.com/v4/linode/types")).get("data", [])
+    best = {}
+    for t in data:
+        n = t.get("gpus") or 0
+        if n < 1:
+            continue
+        hourly = (t.get("price") or {}).get("hourly")
+        if not hourly or hourly <= 0:
+            continue
+        label = t.get("label", "")
+        if "RTX6000" in label.replace(" ", ""):
+            gpu_raw, vram = "RTX 6000 (Turing)", 24
+        elif "RTX4000" in label.replace(" ", ""):
+            gpu_raw, vram = "RTX 4000 Ada", 20
+        else:
+            gpu_raw, vram = re.sub(r"(Dedicated.*?\+|GPU|x\d.*$)", "", label).strip() or label, None
+        per = hourly / n
+        rec = _mk("Akamai (Linode)", "neocloud", "https://www.linode.com/pricing/", "akamai",
+                  gpu_raw, vram, "on-demand", per)
+        key = rec["gpu"]
+        if key not in best or per < best[key]["usd_per_hr"]:
+            best[key] = rec
+    recs = list(best.values())
+    log(f"Akamai ok: {len(recs)} offers")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# E2E Networks — scrape JSON-LD product offers (native INR)
+# ---------------------------------------------------------------------------
+E2E_FALLBACK = [  # (gpu, vram, inr) — used only if the live scrape yields too little
+    ("B200", 192, 671), ("H200", 141, 436), ("H100", 80, 362), ("RTX 6000 Pro", 96, 182),
+    ("A100", 80, 189), ("A40", 48, 96), ("L40S", 48, 102), ("A30", 24, 90), ("L4", 24, 49),
+]
+
+
+def fetch_e2e():
+    html = http_get("https://www.e2enetworks.com/pricing", browser=True)
+    offers = re.findall(
+        r'"name":"NVIDIA ([^"]+?) GPU Cloud Instance".{0,160}?"priceCurrency":"([A-Z]+)","price":([0-9.]+)',
+        html)
+    recs = []
+    for name, cur, price in offers:
+        fam, label, vg = normalize_gpu(name, None)
+        rec = {"provider": "E2E Networks", "provider_type": "india_cloud", "gpu": fam,
+               "gpu_label": label, "vram_gb": vg, "billing": "on-demand",
+               "region": "India (Delhi/Mumbai)", "country": "IN", "currency": cur,
+               "num_gpus": 1, "source": "e2e", "source_kind": "live",
+               "url": "https://www.e2enetworks.com/pricing"}
+        if cur == "INR":
+            rec["inr_per_hr"] = round(float(price), 2)
+            rec["usd_per_hr"] = None
+        else:
+            rec["usd_per_hr"] = round(float(price), 4)
+        recs.append(rec)
+    # E2E JSON-LD names both A100 variants just "A100"; label by price (higher = 80GB).
+    a100 = sorted([r for r in recs if r["gpu"] == "A100"], key=lambda r: -(r.get("inr_per_hr") or 0))
+    for i, r in enumerate(a100):
+        r["vram_gb"] = 80 if i == 0 else 40
+        r["gpu_label"] = "A100 %dGB" % r["vram_gb"]
+    if len(recs) < 5:
+        raise RuntimeError(f"E2E scrape returned only {len(recs)} offers")
+    log(f"E2E ok: {len(recs)} offers (live INR)")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# JarvisLabs & Yotta Labs — scrape public pricing pages (USD), with fallback
+# ---------------------------------------------------------------------------
+# config: token used to locate the price -> (gpu name, vram, fallback USD)
+JARVIS_CFG = {
+    "H200": ("H200", 141, 3.99), "H100": ("H100", 80, 2.69),
+    "RTX Pro 6000": ("RTX 6000 Pro", 96, 1.89), "RTX PRO 6000": ("RTX 6000 Pro", 96, 1.89),
+    "A100 80GB": ("A100", 80, 1.49), "A100 40GB": ("A100", 40, 0.89),
+    "A30": ("A30", 24, 0.41), "L4": ("L4", 24, 0.44),
+}
+YOTTA_CFG = {
+    "H100": ("H100", 80, 2.56), "H200": ("H200", 141, 2.50), "B200": ("B200", 180, 5.37),
+    "B300": ("B300", 268, 7.64), "A100 PCIe": ("A100", 80, 0.92), "A100 80G": ("A100", 80, 1.48),
+    "RTX 5090": ("RTX 5090", 32, 0.70), "RTX 4090": ("RTX 4090", 24, 0.48),
+    "RTX A6000": ("A6000", 48, 0.45), "RTX 6000 Ada": ("RTX 6000 Ada", 48, 0.97),
+    "RTX PRO 6000": ("RTX 6000 Pro", 96, 1.35),
+}
+
+
+def _scrape_provider(provider, ptype, url, source, cfg):
+    """Scrape a USD pricing page; use live price where found, fallback constant otherwise."""
+    live = {}
+    try:
+        live = scrape_token_prices(html_to_text(http_get(url, browser=True)), list(cfg.keys()))
+    except Exception as e:
+        log(f"{provider} page fetch failed ({e}); using fallback prices.")
+    recs, nlive = [], 0
+    seen = set()
+    for tok, (gpu, vram, fb) in cfg.items():
+        key = (gpu, vram)  # de-dupe A100 80/40 vs alias tokens
+        if key in seen:
+            continue
+        price = live.get(tok)
+        kind = "live" if price is not None else "list"
+        if price is None:
+            price = fb
+        else:
+            nlive += 1
+        seen.add(key)
+        rec = _mk(provider, ptype, url, source, gpu, vram, "on-demand", price, source_kind=kind)
+        if kind == "list":
+            rec["as_of"] = "2026-08-21"
+            rec["note"] = "Published list price (page auto-scrape missed this row)."
+        recs.append(rec)
+    log(f"{provider} ok: {len(recs)} offers ({nlive} live / {len(recs) - nlive} fallback)")
+    return recs
+
+
+def fetch_jarvislabs():
+    return _scrape_provider("JarvisLabs", "india_cloud", "https://jarvislabs.ai/pricing", "jarvislabs", JARVIS_CFG)
+
+
+def fetch_yotta():
+    return _scrape_provider("Yotta Labs", "india_cloud", "https://www.yottalabs.ai/pricing", "yotta", YOTTA_CFG)
+
+
+# ---------------------------------------------------------------------------
 # Curated list prices
 # ---------------------------------------------------------------------------
 def fetch_curated():
@@ -360,7 +557,12 @@ def main():
         for rec in prev.get("prices", []):
             prev_by_source.setdefault(rec.get("source"), []).append(rec)
 
-    for name, fn in (("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("curated", fetch_curated)):
+    source_fns = (
+        ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
+        ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
+        ("yotta", fetch_yotta), ("curated", fetch_curated),
+    )
+    for name, fn in source_fns:
         try:
             recs = fn()
             if recs:

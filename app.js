@@ -226,19 +226,26 @@
   }
 
   // ---- top meta + footer ---------------------------------------------------
+  var SOURCE_LABEL = {
+    "vast.ai": "Vast.ai", "runpod": "RunPod", "verda": "Verda", "akamai": "Akamai",
+    "e2e": "E2E", "jarvislabs": "JarvisLabs", "yotta": "Yotta Labs", "curated": "List prices"
+  };
+
   function renderMeta() {
     var fx = DATA.fx || {}; var rate = (fx.rates || {}).USD;
     var st = DATA.source_status || {};
-    function statusPill(name, label) {
+    function statusPill(name) {
       var s = st[name] || "down";
       var cls = s === "ok" ? "ok" : s === "stale" ? "stale" : "down";
-      return '<span class="meta-pill"><span class="dot ' + cls + '"></span>' + label + "</span>";
+      var title = "Source '" + name + "': " + s;
+      return '<span class="meta-pill" title="' + title + '"><span class="dot ' + cls + '"></span>' +
+        (SOURCE_LABEL[name] || name) + "</span>";
     }
+    var pills = Object.keys(st).map(statusPill).join("");
     document.getElementById("topMeta").innerHTML =
       '<span class="meta-pill">💱 <b>1 USD = ₹' + (rate ? rate.toFixed(2) : "?") + "</b>" +
         (fx.stale ? " (stale)" : "") + "</span>" +
-      '<span class="meta-pill">⏱ Updated <b>' + relTime(DATA.generated_at) + "</b></span>" +
-      statusPill("vast.ai", "Vast.ai") + statusPill("runpod", "RunPod") + statusPill("curated", "List prices");
+      '<span class="meta-pill">⏱ Updated <b>' + relTime(DATA.generated_at) + "</b></span>" + pills;
 
     var anyStale = Object.keys(st).some(function (k) { return st[k] === "stale" || st[k] === "down"; }) || (fx && fx.stale);
     var b = document.getElementById("staleBanner");
@@ -249,10 +256,12 @@
 
     document.getElementById("footer").innerHTML =
       "<p><b>How to read this:</b> Every price is normalised to <b>one GPU for one hour</b> and converted to INR at the live " +
-      "USD→INR rate shown above (source: Frankfurter / ECB). <span style='color:var(--live)'><b>Live</b></span> prices come from the " +
-      "Vast.ai marketplace and RunPod APIs and refresh automatically. <span style='color:var(--list)'><b>List</b></span> prices " +
-      "(E2E, JarvisLabs, hyperscalers) are published rates verified on the date shown — treat them as reference, and always confirm " +
-      "on the provider's console before renting.</p>" +
+      "USD→INR rate shown above (source: Frankfurter / ECB). <span style='color:var(--live)'><b>Live</b></span> prices are fetched " +
+      "automatically each run — from the <b>Vast.ai</b> &amp; <b>RunPod</b> APIs, the <b>Verda (DataCrunch)</b> and <b>Akamai (Linode)</b> " +
+      "APIs, and by scraping the public pricing pages of <b>E2E</b> (native ₹), <b>JarvisLabs</b> and <b>Yotta Labs</b>. " +
+      "<span style='color:var(--list)'><b>List</b></span> prices (Nebius, AWS, GCP, Azure) are published/reference rates verified on the " +
+      "date shown — AWS &amp; GCP can be switched to true-live with a free credential (see the repo README). Always confirm on the " +
+      "provider's console before renting.</p>" +
       "<p><b>Billing:</b> <span class='tag b-spot'>spot</span> = interruptible/bid (cheapest, can be reclaimed) · " +
       "<span class='tag b-community'>community</span> = RunPod community cloud · " +
       "<span class='tag b-ondemand'>on-demand</span> = standard · " +

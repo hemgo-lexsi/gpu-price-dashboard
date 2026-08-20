@@ -1,43 +1,20 @@
 {
-  "_comment": "Curated list prices for providers without a public price API. Prices are per SINGLE GPU per hour. Edit this file to add/remove providers or update numbers; set 'as_of' to the date you verified it. Everything here is clearly labelled as 'list' in the dashboard so users know it is a published rate, not a live market quote.",
+  "_comment": "Curated LIST prices for vendors that have no keyless live price feed. Per SINGLE GPU per hour. These are clearly badged 'list' in the dashboard. E2E, JarvisLabs and Yotta Labs are NOT here — they are scraped live from their public pricing pages by scripts/fetch_prices.py. Nebius renders prices client-side (no public feed); AWS/GCP need a (free) credential for their pricing APIs — see README to enable true-live for those. Edit numbers here and bump 'as_of' when you verify them.",
   "providers": [
     {
-      "provider": "E2E Networks",
-      "provider_type": "india_cloud",
-      "country": "IN",
-      "region": "India (Delhi/Mumbai)",
-      "url": "https://www.e2enetworks.com/pricing",
-      "as_of": "2026-08-20",
-      "note": "Per GPU-hour, excludes taxes. INR billing available on portal.",
+      "provider": "Nebius",
+      "provider_type": "neocloud",
+      "country": "Global",
+      "region": "EU / US",
+      "url": "https://nebius.com/prices",
+      "as_of": "2026-08-21",
+      "note": "Per GPU-hour on-demand. Nebius renders prices client-side, so they can't be scraped keyless — verify on nebius.com/prices.",
       "offers": [
-        {"gpu": "B200",          "vram_gb": 192, "currency": "USD", "price_per_hr": 6.99, "billing": "on-demand"},
-        {"gpu": "H200",          "vram_gb": 141, "currency": "USD", "price_per_hr": 4.54, "billing": "on-demand"},
-        {"gpu": "H100",          "vram_gb": 80,  "currency": "USD", "price_per_hr": 3.77, "billing": "on-demand"},
-        {"gpu": "RTX 6000 Pro",  "vram_gb": 96,  "currency": "USD", "price_per_hr": 1.90, "billing": "on-demand"},
-        {"gpu": "A100",          "vram_gb": 80,  "currency": "USD", "price_per_hr": 2.10, "billing": "on-demand"},
-        {"gpu": "A100",          "vram_gb": 40,  "currency": "USD", "price_per_hr": 1.98, "billing": "on-demand"},
-        {"gpu": "A40",           "vram_gb": 48,  "currency": "USD", "price_per_hr": 1.44, "billing": "on-demand"},
-        {"gpu": "L40S",          "vram_gb": 48,  "currency": "USD", "price_per_hr": 1.20, "billing": "on-demand"},
-        {"gpu": "A30",           "vram_gb": 24,  "currency": "USD", "price_per_hr": 1.35, "billing": "on-demand"},
-        {"gpu": "L4",            "vram_gb": 24,  "currency": "USD", "price_per_hr": 0.57, "billing": "on-demand"}
-      ]
-    },
-    {
-      "provider": "JarvisLabs",
-      "provider_type": "india_cloud",
-      "country": "IN",
-      "region": "India",
-      "url": "https://jarvislabs.ai/pricing",
-      "as_of": "2026-08-20",
-      "note": "Per GPU-hour on-demand. Spot instances up to ~56% cheaper. INR billing for India customers.",
-      "offers": [
-        {"gpu": "H200",         "vram_gb": 141, "currency": "USD", "price_per_hr": 3.99, "billing": "on-demand"},
-        {"gpu": "H100",         "vram_gb": 80,  "currency": "USD", "price_per_hr": 2.69, "billing": "on-demand"},
-        {"gpu": "RTX 6000 Pro", "vram_gb": 96,  "currency": "USD", "price_per_hr": 1.89, "billing": "on-demand"},
-        {"gpu": "A100",         "vram_gb": 80,  "currency": "USD", "price_per_hr": 1.49, "billing": "on-demand"},
-        {"gpu": "A100",         "vram_gb": 40,  "currency": "USD", "price_per_hr": 0.89, "billing": "on-demand"},
-        {"gpu": "A30",          "vram_gb": 24,  "currency": "USD", "price_per_hr": 0.41, "billing": "on-demand"},
-        {"gpu": "L4",           "vram_gb": 24,  "currency": "USD", "price_per_hr": 0.44, "billing": "on-demand"}
+        {"gpu": "B200",  "vram_gb": 180, "currency": "USD", "price_per_hr": 5.50, "billing": "on-demand"},
+        {"gpu": "H200",  "vram_gb": 141, "currency": "USD", "price_per_hr": 3.50, "billing": "on-demand"},
+        {"gpu": "H100",  "vram_gb": 80,  "currency": "USD", "price_per_hr": 2.95, "billing": "on-demand"},
+        {"gpu": "H100",  "vram_gb": 80,  "currency": "USD", "price_per_hr": 1.50, "billing": "spot"},
+        {"gpu": "L40S",  "vram_gb": 48,  "currency": "USD", "price_per_hr": 1.15, "billing": "on-demand"}
       ]
     },
     {
@@ -46,25 +23,12 @@
       "country": "IN",
       "region": "Asia Pacific (Mumbai)",
       "url": "https://aws.amazon.com/ec2/instance-types/",
-      "as_of": "2026-08-20",
-      "note": "Reference on-demand list, derived per-GPU from multi-GPU instances (p5=8xH100, p4d=8xA100-40GB, g6=L4, g5=A10G). Actual Mumbai availability/price varies; verify on console.",
+      "as_of": "2026-08-21",
+      "note": "REFERENCE on-demand list (per-GPU from p5=8xH100, p4d=8xA100-40GB, g6=L4). Live AWS pricing needs a free IAM key (Price List Query API) — see README. Verify on console.",
       "offers": [
         {"gpu": "H100", "vram_gb": 80, "currency": "USD", "price_per_hr": 12.29, "billing": "on-demand"},
         {"gpu": "A100", "vram_gb": 40, "currency": "USD", "price_per_hr": 4.10,  "billing": "on-demand"},
         {"gpu": "L4",   "vram_gb": 24, "currency": "USD", "price_per_hr": 0.80,  "billing": "on-demand"}
-      ]
-    },
-    {
-      "provider": "Azure",
-      "provider_type": "hyperscaler",
-      "country": "Global",
-      "region": "Global (list)",
-      "url": "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/",
-      "as_of": "2026-08-20",
-      "note": "Reference on-demand list, per-GPU from ND H100 v5 (8xH100) and NC A100 v4 (A100-80GB). Region/reserved pricing varies; verify on portal.",
-      "offers": [
-        {"gpu": "H100", "vram_gb": 80, "currency": "USD", "price_per_hr": 12.29, "billing": "on-demand"},
-        {"gpu": "A100", "vram_gb": 80, "currency": "USD", "price_per_hr": 3.67,  "billing": "on-demand"}
       ]
     },
     {
@@ -73,11 +37,24 @@
       "country": "Global",
       "region": "Global (list)",
       "url": "https://cloud.google.com/compute/gpus-pricing",
-      "as_of": "2026-08-20",
-      "note": "Reference on-demand list, per-GPU from A3 (8xH100) and A2 (A100-40GB). Region/committed-use pricing varies; verify on console.",
+      "as_of": "2026-08-21",
+      "note": "REFERENCE on-demand list (per-GPU from A3=8xH100, A2=A100-40GB). Live GCP pricing needs a free API key (Cloud Billing Catalog API) — see README. Verify on console.",
       "offers": [
         {"gpu": "H100", "vram_gb": 80, "currency": "USD", "price_per_hr": 11.00, "billing": "on-demand"},
         {"gpu": "A100", "vram_gb": 40, "currency": "USD", "price_per_hr": 3.67,  "billing": "on-demand"}
+      ]
+    },
+    {
+      "provider": "Azure",
+      "provider_type": "hyperscaler",
+      "country": "Global",
+      "region": "Global (list)",
+      "url": "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/",
+      "as_of": "2026-08-21",
+      "note": "REFERENCE on-demand list (per-GPU from ND H100 v5, NC A100 v4). Region/reserved pricing varies; verify on portal.",
+      "offers": [
+        {"gpu": "H100", "vram_gb": 80, "currency": "USD", "price_per_hr": 12.29, "billing": "on-demand"},
+        {"gpu": "A100", "vram_gb": 80, "currency": "USD", "price_per_hr": 3.67,  "billing": "on-demand"}
       ]
     }
   ]
