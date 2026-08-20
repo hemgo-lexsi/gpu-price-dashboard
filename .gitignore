@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local scratch
+scratchpad/
+*.log
+
+# NOTE: data/*.js and data/*.json ARE committed on purpose —
+# GitHub Pages serves them as the dashboard's live dataset.

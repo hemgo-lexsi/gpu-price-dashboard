@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GPU Price Dashboard · India (INR)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f5; --ink:#111826; --muted:#5b6675;
+    --line:#e3e7ee; --accent:#2b6cff; --accent-ink:#fff;
+    --good:#0f9d58; --good-bg:#e7f6ee; --warn:#c77700; --warn-bg:#fdf3e2;
+    --live:#0f9d58; --list:#7a5cff; --spot:#c77700;
+    --chip:#eef1f6; --chip-on:#2b6cff; --chip-on-ink:#fff;
+    --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+    --radius:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0c0f14; --panel:#141922; --panel-2:#1b212c; --ink:#e8ecf3; --muted:#98a2b3;
+      --line:#242c38; --accent:#5b8cff; --accent-ink:#0c0f14;
+      --good:#3ecf8e; --good-bg:#123024; --warn:#e0a94a; --warn-bg:#33270f;
+      --live:#3ecf8e; --list:#a48bff; --spot:#e0a94a;
+      --chip:#1f2632; --chip-on:#5b8cff; --chip-on-ink:#0c0f14;
+      --shadow:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1240px;margin:0 auto;padding:20px 18px 60px}
+  header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 22px;margin-bottom:16px}
+  h1{font-size:22px;margin:0;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .top-meta{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:12.5px}
+  .meta-pill{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;box-shadow:var(--shadow);white-space:nowrap}
+  .meta-pill b{color:var(--ink)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .dot.ok{background:var(--good)} .dot.stale{background:var(--warn)} .dot.down{background:#e5484d}
+
+  /* KPI cards */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:6px 0 18px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px;box-shadow:var(--shadow);cursor:pointer;transition:transform .06s,border-color .12s}
+  .kpi:hover{transform:translateY(-1px);border-color:var(--accent)}
+  .kpi.active{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
+  .kpi .g{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.2px}
+  .kpi .p{font-size:22px;font-weight:700;margin:3px 0 1px;letter-spacing:-.4px}
+  .kpi .p small{font-size:12px;font-weight:600;color:var(--muted)}
+  .kpi .d{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* Panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .controls{padding:14px 15px;margin-bottom:16px}
+  .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+  .row + .row{margin-top:12px}
+  .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-right:2px}
+  input[type=search],select{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:8px 11px;font-size:13.5px;outline:none;transition:border-color .12s
+  }
+  input[type=search]:focus,select:focus{border-color:var(--accent)}
+  input[type=search]{flex:1;min-width:200px}
+  .grow{flex:1}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    background:var(--chip);border:1px solid transparent;color:var(--ink);
+    border-radius:999px;padding:5px 11px;font-size:12.5px;cursor:pointer;user-select:none;
+    transition:background .1s,color .1s;white-space:nowrap
+  }
+  .chip:hover{border-color:var(--accent)}
+  .chip.on{background:var(--chip-on);color:var(--chip-on-ink);font-weight:600}
+  .chip .x{opacity:.7;margin-left:3px}
+  details.gpugroup{width:100%}
+  details.gpugroup summary{cursor:pointer;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;list-style:none;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  details.gpugroup summary::-webkit-details-marker{display:none}
+  details.gpugroup summary .caret{transition:transform .12s}
+  details.gpugroup[open] summary .caret{transform:rotate(90deg)}
+  .toggle{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;user-select:none}
+  .switch{width:36px;height:20px;border-radius:999px;background:var(--line);position:relative;transition:background .12s}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .12s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .toggle input{display:none}
+  .toggle input:checked + .switch{background:var(--accent)}
+  .toggle input:checked + .switch::after{left:18px}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 13px;font-size:13px;cursor:pointer;font-weight:600}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .rangev{font-variant-numeric:tabular-nums;font-weight:700;min-width:74px}
+  input[type=range]{accent-color:var(--accent)}
+
+  /* Results */
+  .resbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 2px 10px}
+  .resbar .count{font-weight:700}
+  .tablewrap{overflow-x:auto;border-radius:var(--radius)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{
+    position:sticky;top:0;background:var(--panel-2);text-align:left;padding:10px 12px;
+    font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+    border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;z-index:1
+  }
+  thead th.num{text-align:right}
+  thead th .arrow{opacity:.5;font-size:10px}
+  tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+  tbody tr:hover{background:var(--panel-2)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .inr{font-weight:700;font-size:14px}
+  .cheapest{position:relative}
+  .cheapest td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;letter-spacing:.3px;text-transform:uppercase}
+  .tag.best{background:var(--good-bg);color:var(--good);margin-left:7px}
+  .b-live{background:var(--good-bg);color:var(--live)}
+  .b-list{background:color-mix(in srgb,var(--list) 15%,transparent);color:var(--list)}
+  .b-spot{background:var(--warn-bg);color:var(--spot)}
+  .b-ondemand{background:var(--panel-2);color:var(--muted)}
+  .b-secure{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+  .b-community{background:var(--panel-2);color:var(--muted)}
+  .ptype{font-size:11px;color:var(--muted)}
+  .rel{display:inline-block;min-width:34px}
+  .muted{color:var(--muted)}
+  .gpu-strong{font-weight:600}
+
+  /* Trends */
+  .trends{padding:15px;margin-top:18px}
+  .trends h2,.controls h2{font-size:15px;margin:0 0 4px}
+  .chartbox{position:relative;margin-top:10px}
+  svg.chart{width:100%;height:300px;display:block}
+  .chart-empty{color:var(--muted);padding:40px 10px;text-align:center}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+  .legend b{color:var(--ink)}
+
+  footer{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.6}
+  footer code{background:var(--panel-2);padding:1px 5px;border-radius:5px}
+  .banner{background:var(--warn-bg);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);padding:10px 13px;border-radius:10px;margin-bottom:14px;font-size:13px;display:none}
+  .err{padding:40px;text-align:center}
+  @media (max-width:640px){
+    h1{font-size:19px}
+    .kpi .p{font-size:19px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>GPU Price Dashboard <span class="muted" style="font-weight:600">· India (₹/hr)</span></h1>
+      <div class="sub">Cheapest GPU-hour across live marketplaces &amp; Indian clouds, converted to INR at the live FX rate.</div>
+    </div>
+    <div class="top-meta" id="topMeta"></div>
+  </header>
+
+  <div class="banner" id="staleBanner"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="panel controls">
+    <div class="row">
+      <span class="lbl">Search</span>
+      <input type="search" id="q" placeholder="Provider, GPU, region… (e.g. H100, India, Vast)" autocomplete="off" />
+      <label class="toggle" title="Show only live-fetched prices (hide published list prices)">
+        <input type="checkbox" id="liveOnly" /><span class="switch"></span> Live only
+      </label>
+      <select id="unit" title="Show price per…">
+        <option value="1">per hour</option>
+        <option value="24">per day</option>
+        <option value="730">per month</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Type</span>
+      <div class="chips" id="ptypeChips"></div>
+      <span class="lbl" style="margin-left:8px">Billing</span>
+      <div class="chips" id="billingChips"></div>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Provider</span>
+      <div class="chips" id="providerChips"></div>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Min VRAM</span>
+      <select id="minVram">
+        <option value="0">Any</option>
+        <option value="16">≥ 16 GB</option>
+        <option value="24">≥ 24 GB</option>
+        <option value="40">≥ 40 GB</option>
+        <option value="48">≥ 48 GB</option>
+        <option value="80">≥ 80 GB</option>
+        <option value="140">≥ 140 GB</option>
+      </select>
+      <span class="lbl" style="margin-left:8px">Max ₹/hr</span>
+      <input type="range" id="maxInr" min="0" max="100" value="100" />
+      <span class="rangev" id="maxInrV">Any</span>
+    </div>
+
+    <details class="gpugroup" id="gpuGroup" open>
+      <summary><span class="caret">▶</span> GPU model <span class="muted" id="gpuSelCount"></span></summary>
+      <div class="chips" id="gpuChips"></div>
+    </details>
+  </section>
+
+  <div class="resbar">
+    <span class="count" id="count"></span>
+    <span class="muted" id="cheapNote"></span>
+    <span class="grow"></span>
+    <button class="btn" id="resetBtn">Reset filters</button>
+    <button class="btn primary" id="csvBtn">⭳ Export CSV</button>
+  </div>
+
+  <div class="panel tablewrap">
+    <table id="tbl">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+
+  <section class="panel trends">
+    <h2>Price trend</h2>
+    <div class="sub">Cheapest ₹/hr for a model over time (updates as the dataset accumulates snapshots).</div>
+    <div class="row" style="margin-top:10px">
+      <span class="lbl">Model</span>
+      <select id="trendGpu"></select>
+      <label class="toggle" title="Overlay the USD→INR exchange rate"><input type="checkbox" id="fxOverlay"/><span class="switch"></span> USD→INR overlay</label>
+    </div>
+    <div class="chartbox" id="chartbox"></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<!-- Data is injected as globals so the page also works when opened directly (file://). -->
+<script src="data/prices.js"></script>
+<script src="data/history.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
