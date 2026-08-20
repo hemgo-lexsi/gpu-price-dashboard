@@ -228,7 +228,8 @@
   // ---- top meta + footer ---------------------------------------------------
   var SOURCE_LABEL = {
     "vast.ai": "Vast.ai", "runpod": "RunPod", "verda": "Verda", "akamai": "Akamai",
-    "e2e": "E2E", "jarvislabs": "JarvisLabs", "yotta": "Yotta Labs", "curated": "List prices"
+    "e2e": "E2E", "jarvislabs": "JarvisLabs", "yotta": "Yotta Labs",
+    "gcp": "GCP", "aws": "AWS", "curated": "List prices"
   };
 
   function renderMeta() {

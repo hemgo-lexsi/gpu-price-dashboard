@@ -471,13 +471,133 @@ def fetch_yotta():
 
 
 # ---------------------------------------------------------------------------
+# GCP — Cloud Billing Catalog API (needs a free API key in env GCP_API_KEY)
+# ---------------------------------------------------------------------------
+GCP_COMPUTE_SVC = "6F81-5844-456A"  # Compute Engine service id
+
+
+def _gcp_model(desc):
+    d = desc.upper()
+    if "H200" in d:
+        return "H200", 141
+    if "H100" in d:
+        return "H100", 80
+    if "A100" in d:
+        return "A100", (80 if "80GB" in d or "80 GB" in d else 40)
+    if "L40S" in d:
+        return "L40S", 48
+    if "L4" in d and "L40" not in d:
+        return "L4", 24
+    if "T4" in d:
+        return "T4", 16
+    if "V100" in d:
+        return "V100", 16
+    if "P100" in d:
+        return "P100", 16
+    return None, None
+
+
+def fetch_gcp():
+    key = os.environ["GCP_API_KEY"]
+    base = f"https://cloudbilling.googleapis.com/v1/services/{GCP_COMPUTE_SVC}/skus?pageSize=5000&key={key}"
+    skus, page = [], None
+    for _ in range(10):  # safety cap on pagination
+        url = base + (f"&pageToken={page}" if page else "")
+        d = json.loads(http_get(url))
+        skus.extend(d.get("skus", []))
+        page = d.get("nextPageToken")
+        if not page:
+            break
+    best = {}  # model -> (price, region, vram)
+    for s in skus:
+        cat = s.get("category", {})
+        if cat.get("resourceGroup") != "GPU" or cat.get("usageType") != "OnDemand":
+            continue
+        desc = s.get("description", "")
+        model, vram = _gcp_model(desc)
+        if not model:
+            continue
+        pes = (s.get("pricingInfo") or [{}])[0].get("pricingExpression", {})
+        rates = pes.get("tieredRates") or []
+        if not rates:
+            continue
+        up = rates[-1].get("unitPrice", {})
+        price = (up.get("units") and float(up["units"]) or 0) + float(up.get("nanos", 0)) / 1e9
+        if price <= 0:
+            continue
+        m = re.search(r"running in (.+)$", desc)
+        region = m.group(1).strip() if m else "Global"
+        prefer = "asia south" in region.lower() or "mumbai" in region.lower()
+        if model not in best or price < best[model][0] or prefer:
+            if model not in best or price < best[model][0]:
+                best[model] = (price, region, vram)
+    recs = [_mk("GCP", "hyperscaler", "https://cloud.google.com/compute/gpus-pricing", "gcp",
+                model, vram, "on-demand", price) | {"region": region, "country": "Global"}
+            for model, (price, region, vram) in best.items()]
+    if not recs:
+        raise RuntimeError("GCP catalog returned no GPU SKUs")
+    log(f"GCP ok: {len(recs)} offers (live)")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# AWS — Price List Query API via boto3 (needs AWS_ACCESS_KEY_ID/SECRET in env)
+# ---------------------------------------------------------------------------
+AWS_TARGETS = {  # instanceType -> (gpu, vram, num_gpus)
+    "p5.48xlarge": ("H100", 80, 8),
+    "p4de.24xlarge": ("A100", 80, 8),
+    "p4d.24xlarge": ("A100", 40, 8),
+    "g6.xlarge": ("L4", 24, 1),
+    "g6e.xlarge": ("L40S", 48, 1),
+    "g5.xlarge": ("A10G", 24, 1),
+}
+AWS_REGION_PRICING = "us-east-1"   # the Pricing API endpoint region
+AWS_REGION_TARGET = "ap-south-1"   # Mumbai — the prices we want
+
+
+def fetch_aws():
+    import boto3  # only imported when AWS creds are configured
+    cli = boto3.client("pricing", region_name=AWS_REGION_PRICING)
+    recs = []
+    for it, (gpu, vram, gpus) in AWS_TARGETS.items():
+        try:
+            resp = cli.get_products(ServiceCode="AmazonEC2", MaxResults=1, Filters=[
+                {"Type": "TERM_MATCH", "Field": "instanceType", "Value": it},
+                {"Type": "TERM_MATCH", "Field": "regionCode", "Value": AWS_REGION_TARGET},
+                {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
+                {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
+                {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+                {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
+            ])
+            for pl in resp.get("PriceList", []):
+                d = json.loads(pl)
+                od = d.get("terms", {}).get("OnDemand", {})
+                for term in od.values():
+                    for dim in term.get("priceDimensions", {}).values():
+                        usd = dim.get("pricePerUnit", {}).get("USD")
+                        if usd and float(usd) > 0:
+                            recs.append(_mk("AWS (Mumbai ap-south)", "hyperscaler",
+                                            "https://aws.amazon.com/ec2/instance-types/", "aws",
+                                            gpu, vram, "on-demand", float(usd) / gpus)
+                                        | {"region": "Asia Pacific (Mumbai)", "country": "IN"})
+        except Exception as e:
+            log(f"AWS {it} failed: {e}")
+    if not recs:
+        raise RuntimeError("AWS returned no priced GPU instances (check IAM perms / region)")
+    log(f"AWS ok: {len(recs)} offers (live)")
+    return recs
+
+
+# ---------------------------------------------------------------------------
 # Curated list prices
 # ---------------------------------------------------------------------------
-def fetch_curated():
+def fetch_curated(skip_providers=()):
     with open(CURATED, "r", encoding="utf-8") as f:
         doc = json.load(f)
     records = []
     for prov in doc.get("providers", []):
+        if any(prov["provider"].startswith(s) for s in skip_providers):
+            continue
         for off in prov.get("offers", []):
             fam, label, vg = normalize_gpu(off["gpu"], off.get("vram_gb"))
             cur = off.get("currency", "USD")
@@ -557,12 +677,7 @@ def main():
         for rec in prev.get("prices", []):
             prev_by_source.setdefault(rec.get("source"), []).append(rec)
 
-    source_fns = (
-        ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
-        ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
-        ("yotta", fetch_yotta), ("curated", fetch_curated),
-    )
-    for name, fn in source_fns:
+    def run_source(name, fn):
         try:
             recs = fn()
             if recs:
@@ -577,6 +692,30 @@ def main():
                 log(f"  -> reused {len(stale)} previous {name} records (stale).")
             else:
                 sources[name] = {"records": [], "status": "down"}
+
+    # Optional true-live hyperscaler sources activate only when their (free)
+    # credentials are present as environment variables / GitHub secrets.
+    source_fns = [
+        ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
+        ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
+        ("yotta", fetch_yotta),
+    ]
+    if os.getenv("GCP_API_KEY"):
+        source_fns.append(("gcp", fetch_gcp))
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        source_fns.append(("aws", fetch_aws))
+
+    for name, fn in source_fns:
+        run_source(name, fn)
+
+    # Curated runs last; skip a provider's reference row only if its live
+    # source actually produced data (so a broken key keeps the reference).
+    skip = []
+    if sources.get("gcp", {}).get("status") in ("ok", "stale"):
+        skip.append("GCP")
+    if sources.get("aws", {}).get("status") in ("ok", "stale"):
+        skip.append("AWS")
+    run_source("curated", lambda: fetch_curated(skip_providers=tuple(skip)))
 
     all_records = []
     for s in sources.values():

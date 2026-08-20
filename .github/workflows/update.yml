@@ -2,8 +2,8 @@ name: Update GPU prices
 
 on:
   schedule:
-    # Every 30 minutes (UTC). GitHub may delay scheduled runs under load.
-    - cron: "*/30 * * * *"
+    # Every 10 minutes (UTC). GitHub may delay scheduled runs under load.
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}        # allow manual "Run workflow"
   push:
     branches: [main]
@@ -29,7 +29,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      # boto3 is only needed if you enable live AWS pricing (AWS_* secrets).
+      # It's a tiny, quick install and harmless otherwise.
+      - name: Install optional deps
+        run: pip install --quiet boto3
+
       - name: Fetch prices and rebuild data
+        env:
+          # Optional — set these as repo secrets to enable true-live AWS/GCP pricing.
+          # Leave them unset and the pipeline simply uses the reference list prices.
+          GCP_API_KEY: ${{ secrets.GCP_API_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: python scripts/fetch_prices.py
 
       - name: Commit refreshed data
