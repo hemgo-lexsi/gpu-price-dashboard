@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-GPU Price Dashboard - data pipeline (stdlib only, no pip installs required).
+GPU Price Dashboard - data pipeline.
 
-Fetches:
-  * Live FX (USD->INR, EUR->INR) from Frankfurter
-  * Live Vast.ai marketplace offers (on-demand + spot) per GPU model
-  * Live RunPod pricing (secure + community) for all GPU types
-  * Curated list prices from data/curated.json (Indian clouds + hyperscalers)
+Fetches (each source isolated; one failing never kills the run):
+  * Live FX (USD->INR, EUR->INR) from Frankfurter / ECB
+  * Vast.ai marketplace (on-demand + spot), RunPod, Verda/DataCrunch (on-demand +
+    spot), Akamai/Linode — all keyless JSON APIs
+  * E2E (JSON-LD, native INR), JarvisLabs, Yotta Labs — scraped public pricing pages
+  * Optional live AWS (boto3 + IAM key) and GCP (Billing Catalog API key), only
+    when their credentials are present in the environment
+  * Curated list prices from data/curated.json (Nebius + hyperscaler reference)
 
 Normalises everything to INR per SINGLE GPU per hour and writes:
   * data/prices.json / data/prices.js   (current snapshot for the dashboard)
-  * data/history.json / data/history.js (append-only trend series)
+  * data/history.json / data/history.js (throttled append-only trend series)
 
-Design goals: robust (one source failing never kills the run), honest
-(everything labelled live vs list), and dependency-free (runs on a bare
-Python 3.9+ on any GitHub Actions runner or a laptop).
+Dependencies: Python stdlib only, except boto3 which is imported lazily and only
+needed if live AWS pricing is enabled.
 """
 
 import json
@@ -39,7 +41,8 @@ HISTORY_JSON = os.path.join(DATA, "history.json")
 HISTORY_JS = os.path.join(DATA, "history.js")
 CURATED = os.path.join(DATA, "curated.json")
 
-HISTORY_CAP = 3000          # keep at most this many trend snapshots
+HISTORY_CAP = 1500          # keep at most this many trend snapshots (~31 days at 30-min spacing)
+HISTORY_MIN_GAP_MIN = 30    # don't append a trend point more often than this
 USER_AGENT = "gpu-price-dashboard/1.0 (+https://github.com/)"
 TIMEOUT = 40
 
@@ -111,6 +114,11 @@ def normalize_gpu(raw, vram_gb=None):
     r = (raw or "").upper().replace("-", " ").replace("_", " ")
     r = " ".join(r.split())
 
+    # Grace-Blackwell superchips (check before B200/B300 — "GB200" contains "B200")
+    if "GB300" in r:
+        return "GB300", "GB300 (Grace-Blackwell)", vram_gb or 288
+    if "GB200" in r:
+        return "GB200", "GB200 (Grace-Blackwell)", vram_gb or 186
     # Datacenter / Hopper / Blackwell
     if "B200" in r:
         return "B200", "B200", vram_gb or 180
@@ -403,13 +411,26 @@ def fetch_e2e():
         else:
             rec["usd_per_hr"] = round(float(price), 4)
         recs.append(rec)
+    if len(recs) < 5:
+        # Page structure changed / blocked: fall back to last-known INR list prices.
+        log(f"E2E scrape weak ({len(recs)} offers); using fallback list prices.")
+        recs = []
+        for gpu, vram, inr in E2E_FALLBACK:
+            fam, label, vg = normalize_gpu(gpu, vram)
+            recs.append({"provider": "E2E Networks", "provider_type": "india_cloud", "gpu": fam,
+                         "gpu_label": label, "vram_gb": vram or vg, "billing": "on-demand",
+                         "region": "India (Delhi/Mumbai)", "country": "IN", "currency": "INR",
+                         "inr_per_hr": float(inr), "usd_per_hr": None, "num_gpus": 1,
+                         "source": "e2e", "source_kind": "list", "as_of": "2026-08-21",
+                         "note": "Fallback list price (live scrape unavailable).",
+                         "url": "https://www.e2enetworks.com/pricing"})
+        log(f"E2E ok: {len(recs)} offers (fallback list)")
+        return recs
     # E2E JSON-LD names both A100 variants just "A100"; label by price (higher = 80GB).
     a100 = sorted([r for r in recs if r["gpu"] == "A100"], key=lambda r: -(r.get("inr_per_hr") or 0))
     for i, r in enumerate(a100):
         r["vram_gb"] = 80 if i == 0 else 40
         r["gpu_label"] = "A100 %dGB" % r["vram_gb"]
-    if len(recs) < 5:
-        raise RuntimeError(f"E2E scrape returned only {len(recs)} offers")
     log(f"E2E ok: {len(recs)} offers (live INR)")
     return recs
 
@@ -526,11 +547,9 @@ def fetch_gcp():
         if price <= 0:
             continue
         m = re.search(r"running in (.+)$", desc)
-        region = m.group(1).strip() if m else "Global"
-        prefer = "asia south" in region.lower() or "mumbai" in region.lower()
-        if model not in best or price < best[model][0] or prefer:
-            if model not in best or price < best[model][0]:
-                best[model] = (price, region, vram)
+        region = (m.group(1).strip() if m else "Global").rstrip(".")
+        if model not in best or price < best[model][0]:  # keep cheapest region per model
+            best[model] = (price, region, vram)
     recs = [_mk("GCP", "hyperscaler", "https://cloud.google.com/compute/gpus-pricing", "gcp",
                 model, vram, "on-demand", price) | {"region": region, "country": "Global"}
             for model, (price, region, vram) in best.items()]
@@ -757,17 +776,20 @@ def main():
     write_json(PRICES_JSON, payload)
     write_js(PRICES_JS, "__GPU_DATA__", payload)
 
-    # --- History (append compact snapshot) ---
+    # --- History (append a compact snapshot, throttled so a fast refresh
+    # cadence doesn't bloat the file or over-churn commits) ---
     history = load_history()
-    snap = {
-        "ts": fetched_at,
-        "usd_inr": round(fx_rates.get("USD", 0), 3),
-        "min_by_gpu": {k: v["inr_per_hr"] for k, v in cheapest.items()},
-    }
-    history.append(snap)
-    history = history[-HISTORY_CAP:]
-    write_json(HISTORY_JSON, history)
-    write_js(HISTORY_JS, "__GPU_HISTORY__", history)
+    if _history_gap_ok(history, fetched_at):
+        history.append({
+            "ts": fetched_at,
+            "usd_inr": round(fx_rates.get("USD", 0), 3),
+            "min_by_gpu": {k: v["inr_per_hr"] for k, v in cheapest.items()},
+        })
+        history = history[-HISTORY_CAP:]
+        write_json(HISTORY_JSON, history)
+        write_js(HISTORY_JS, "__GPU_HISTORY__", history)
+    else:
+        log("History: within min-gap window, not appending a trend point this run.")
 
     log(f"DONE: {payload['counts']['total']} records "
         f"({payload['counts']['live']} live / {payload['counts']['list']} list); "
@@ -781,6 +803,17 @@ def load_history():
             return h if isinstance(h, list) else []
     except Exception:
         return []
+
+
+def _history_gap_ok(history, now_ts):
+    if not history:
+        return True
+    try:
+        last = datetime.strptime(history[-1]["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        now = datetime.strptime(now_ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return (now - last).total_seconds() >= HISTORY_MIN_GAP_MIN * 60
+    except Exception:
+        return True
 
 
 def write_json(path, obj):

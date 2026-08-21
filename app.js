@@ -157,7 +157,9 @@
         : '<span class="tag b-live" title="Live fetch">' + esc(r.source) + "</span>";
       if (r.stale) srcCell += ' <span class="tag b-spot" title="Reused from previous run (source was unreachable)">stale</span>';
       return '<tr class="' + (isBest ? "cheapest" : "") + '">' +
-        '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.provider) + "</a></td>" +
+        '<td><a class="provlink" href="' + esc(r.url) + '" target="_blank" rel="noopener" ' +
+          'title="Open ' + esc(r.provider) + ' pricing in a new tab">' + esc(r.provider) +
+          ' <span class="ext">↗</span></a></td>' +
         '<td><span class="ptype">' + esc(PTYPE_LABEL[r.provider_type] || r.provider_type) + "</span></td>" +
         '<td class="gpu-strong">' + esc(r.gpu_label || r.gpu) +
           (r.vram_gb && !/gb/i.test(r.gpu_label || "") ? ' <span class="muted">' + r.vram_gb + "GB</span>" : "") +
@@ -370,7 +372,9 @@
     rows.forEach(function (r) {
       lines.push(head.map(function (k) {
         var v = r[k]; if (v == null) v = "";
-        v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        v = String(v);
+        if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;          // neutralise CSV formula injection
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
       }).join(","));
     });
     var blob = new Blob([lines.join("\n")], { type: "text/csv" });
