@@ -608,6 +608,94 @@ def fetch_aws():
 
 
 # ---------------------------------------------------------------------------
+# Nebius — keyless. Prices are baked into the server-rendered (SSG) HTML, so we
+# scrape the pricing table directly. Each GPU row has a preemptible and an
+# on-demand $/GPU-hour column.
+# ---------------------------------------------------------------------------
+NEBIUS_CFG = {  # token found in the page -> (gpu, vram, (fallback_preempt, fallback_ondemand))
+    "HGX H200": ("H200", 141, (2.45, 4.50)),
+    "HGX H100": ("H100", 80, (2.15, 3.85)),
+    "HGX B300": ("B300", 268, (4.30, 7.85)),
+    "HGX B200": ("B200", 180, (3.95, 7.15)),
+    "RTX PRO 6000": ("RTX 6000 Pro", 96, (0.95, 1.80)),
+    "L40S with AMD": ("L40S", 48, (0.74, 1.55)),
+}
+
+
+def fetch_nebius():
+    txt = ""
+    try:
+        txt = html_to_text(http_get("https://nebius.com/prices", browser=True))
+    except Exception as e:
+        log(f"Nebius page fetch failed ({e}); using fallback prices.")
+    recs, nlive = [], 0
+    for tok, (gpu, vram, fb) in NEBIUS_CFG.items():
+        preempt, ondemand, kind = fb[0], fb[1], "list"
+        i = txt.find(tok)
+        if i >= 0:
+            prices = re.findall(r"\$([0-9]{1,2}\.[0-9]{2})", txt[i + len(tok): i + len(tok) + 90])
+            if len(prices) >= 2 and float(prices[1]) > float(prices[0]) > 0:
+                preempt, ondemand, kind, nlive = float(prices[0]), float(prices[1]), "live", nlive + 1
+        for billing, price in (("on-demand", ondemand), ("spot", preempt)):
+            rec = _mk("Nebius", "neocloud", "https://nebius.com/prices", "nebius",
+                      gpu, vram, billing, price, source_kind=kind) | {"region": "EU / US", "country": "Global"}
+            if kind == "list":
+                rec["as_of"] = "2026-08-21"
+                rec["note"] = "Fallback list price (live scrape unavailable)."
+            recs.append(rec)
+    log(f"Nebius ok: {len(recs)} offers ({nlive} live / {len(NEBIUS_CFG) - nlive} fallback rows)")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# Azure — keyless public Retail Prices API. We price a few representative GPU
+# SKUs and normalise to per-GPU, keeping the cheapest region per family.
+# ---------------------------------------------------------------------------
+AZURE_TARGETS = {  # armSkuName -> (gpu, vram, num_gpus)
+    "Standard_NC40ads_H100_v5": ("H100", 94, 1),
+    "Standard_ND96isr_H100_v5": ("H100", 80, 8),
+    "Standard_ND96isr_H200_v5": ("H200", 141, 8),
+    "Standard_NC24ads_A100_v4": ("A100", 80, 1),
+    "Standard_ND96asr_A100_v4": ("A100", 80, 8),
+}
+
+
+def _azure_query(flt):
+    items, url = [], "https://prices.azure.com/api/retail/prices?" + urllib.parse.urlencode({"$filter": flt})
+    for _ in range(5):  # follow paging, capped
+        d = json.loads(http_get(url))
+        items.extend(d.get("Items", []))
+        url = d.get("NextPageLink")
+        if not url:
+            break
+    return items
+
+
+def fetch_azure():
+    best = {}  # gpu -> (per_gpu, region, vram)
+    for sku, (gpu, vram, count) in AZURE_TARGETS.items():
+        flt = ("serviceName eq 'Virtual Machines' and priceType eq 'Consumption' "
+               f"and armSkuName eq '{sku}'")
+        for x in _azure_query(flt):
+            mn = x.get("meterName", "")
+            if "Spot" in mn or "Low Priority" in mn or x.get("unitOfMeasure") != "1 Hour":
+                continue
+            price = x.get("retailPrice") or 0
+            if price <= 0:
+                continue
+            per = price / count
+            if gpu not in best or per < best[gpu][0]:
+                best[gpu] = (per, x.get("armRegionName", "—"), vram)
+    recs = [_mk("Azure", "hyperscaler", "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/",
+                "azure", gpu, vram, "on-demand", per) | {"region": region, "country": "Global"}
+            for gpu, (per, region, vram) in best.items()]
+    if not recs:
+        raise RuntimeError("Azure Retail Prices returned no GPU SKUs")
+    log(f"Azure ok: {len(recs)} offers (live)")
+    return recs
+
+
+# ---------------------------------------------------------------------------
 # Curated list prices
 # ---------------------------------------------------------------------------
 def fetch_curated(skip_providers=()):
@@ -717,7 +805,7 @@ def main():
     source_fns = [
         ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
         ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
-        ("yotta", fetch_yotta),
+        ("yotta", fetch_yotta), ("nebius", fetch_nebius), ("azure", fetch_azure),
     ]
     if os.getenv("GCP_API_KEY"):
         source_fns.append(("gcp", fetch_gcp))
@@ -742,6 +830,18 @@ def main():
 
     all_records = apply_fx(all_records, fx_rates)
     all_records = [r for r in all_records if r.get("inr_per_hr")]
+
+    # De-duplicate identical offers (e.g. RunPod lists two SKUs that map to the
+    # same family/price). Keep the first occurrence.
+    seen, deduped = set(), []
+    for r in all_records:
+        key = (r["provider"], r["gpu"], r.get("gpu_label"), r["billing"], r.get("region"),
+               round(r["inr_per_hr"], 2))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+    all_records = deduped
 
     # Stamp fetched_at on freshly fetched (non-stale) records
     for r in all_records:

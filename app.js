@@ -96,7 +96,11 @@
         va = (va || "").toString().toLowerCase(); vb = (vb || "").toString().toLowerCase();
         return va < vb ? -d : va > vb ? d : 0;
       }
-      va = va == null ? Infinity : va; vb = vb == null ? Infinity : vb;
+      // Missing values always sink to the bottom, regardless of sort direction.
+      var an = va == null, bn = vb == null;
+      if (an && bn) return 0;
+      if (an) return 1;
+      if (bn) return -1;
       return (va - vb) * d;
     });
   }
@@ -110,16 +114,17 @@
     { k: "gpu", t: "GPU" },
     { k: "billing", t: "Billing" },
     { k: "region", t: "Region" },
-    { k: "reliability", t: "Rel.", num: true },
+    { k: "reliability", t: "Rel.", num: true, title: "Vast.ai host reliability score (marketplace only)" },
     { k: "inr_per_hr", t: "₹ / hr", num: true },
-    { k: "usd_per_hr", t: "USD/hr", num: true },
+    { k: "usd_per_hr", t: "USD/hr", num: true, title: "Original USD rate — always per hour, not affected by the day/month toggle" },
     { k: "source", t: "Source" }
   ];
 
   function renderHead() {
     document.getElementById("head").innerHTML = COLS.map(function (c) {
       var arrow = state.sort === c.k ? (state.dir === 1 ? " ▲" : " ▼") : "";
-      return '<th data-k="' + c.k + '"' + (c.num ? ' class="num"' : "") + '>' + esc(c.t) +
+      return '<th data-k="' + c.k + '"' + (c.num ? ' class="num"' : "") +
+        (c.title ? ' title="' + esc(c.title) + '"' : "") + ">" + esc(c.t) +
         '<span class="arrow">' + arrow + "</span></th>";
     }).join("");
     document.querySelectorAll("#head th").forEach(function (th) {
@@ -231,7 +236,7 @@
   var SOURCE_LABEL = {
     "vast.ai": "Vast.ai", "runpod": "RunPod", "verda": "Verda", "akamai": "Akamai",
     "e2e": "E2E", "jarvislabs": "JarvisLabs", "yotta": "Yotta Labs",
-    "gcp": "GCP", "aws": "AWS", "curated": "List prices"
+    "nebius": "Nebius", "azure": "Azure", "gcp": "GCP", "aws": "AWS", "curated": "List prices"
   };
 
   function renderMeta() {
@@ -380,7 +385,7 @@
     var blob = new Blob([lines.join("\n")], { type: "text/csv" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "gpu-prices-inr-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "") + ".csv";
+    a.download = "gpu-prices-inr-" + new Date().toISOString().slice(0, 16).replace("T", "_").replace(/:/g, "") + ".csv";
     document.body.appendChild(a); a.click(); a.remove();
   }
 

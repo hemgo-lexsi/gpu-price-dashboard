@@ -23,21 +23,27 @@ dated — treat them as reference and confirm on the provider's console before r
 | **RunPod** | Secure + community prices for ~48 GPU types | 🟢 live · keyless API |
 | **Verda** (ex-DataCrunch) | On-demand **+ spot**, wide GPU range (GB300…V100) | 🟢 live · keyless API |
 | **Akamai** (Linode) | RTX 6000 / RTX 4000 Ada instances | 🟢 live · keyless API |
+| **Azure** | H100/H200/A100 per-GPU, cheapest region | 🟢 live · keyless Retail Prices API |
 | **E2E Networks** | Full India lineup, **native ₹** | 🟢 live · scrapes JSON-LD offers |
 | **JarvisLabs** | India on-demand lineup | 🟢 live · scrapes pricing page (+fallback) |
 | **Yotta Labs** | Global self-serve lineup | 🟢 live · scrapes pricing page (+fallback) |
-| **Nebius** | H100/H200/B200… on-demand + spot | 🟡 list — prices render client-side, no keyless feed |
-| **AWS / GCP** | Hyperscaler on-demand reference | 🟡 list by default — **can be made live** with a free credential (below) |
-| **Azure** | Hyperscaler on-demand reference | 🟡 list |
+| **Nebius** | H100/H200/B200/B300… on-demand **+ spot** | 🟢 live · scrapes SSG pricing table (+fallback) |
+| **AWS** | Mumbai (ap-south-1) per-GPU, on-demand | 🟢 live *(with IAM key)* / 🟡 reference otherwise |
+| **GCP** | Per-GPU on-demand, cheapest region | 🟢 live *(with API key)* / 🟡 reference otherwise |
+| **Hyperstack** | Full global lineup (B300…A6000) | 🟡 list (published rates) |
+| **Cyfuture, AceCloud** | India H100 | 🟡 list (published rates) |
 
-### Why some vendors aren't keyless-live
+### Notes on the non-keyless sources
 
-- **Nebius** renders its prices in the browser (client-side JS), so they aren't in
-  the page HTML — scraping them keyless isn't possible without a headless browser.
 - **AWS** on-demand needs the **Price List Query API** (a free IAM key); spot needs
   EC2 credentials. The only keyless option is multi-GB bulk files — impractical to
-  pull every few minutes.
-- **GCP** needs the **Cloud Billing Catalog API** (a free API key).
+  pull every few minutes. Set the IAM key as a secret to go live (below).
+- **GCP** needs the **Cloud Billing Catalog API** (a free API key). Set it as a
+  secret to go live (below).
+- **Nebius** publishes its prices in the server-rendered (SSG) HTML, so we scrape
+  the table directly — no key or headless browser needed. Its official REST/gRPC
+  API would require an IAM bearer token *and* doesn't expose a public $/hr catalog,
+  so the scrape is the better path.
 
 ## Enabling live AWS / GCP (optional)
 
