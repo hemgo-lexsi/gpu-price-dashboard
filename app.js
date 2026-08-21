@@ -319,7 +319,7 @@
     var pts = [];
     HISTORY.forEach(function (h) {
       var v = (h.min_by_gpu || {})[fam];
-      if (v != null) pts.push({ t: Date.parse(h.ts), v: v, fx: h.usd_inr });
+      if (v != null) pts.push({ t: Date.parse(h.ts), v: v, fx: h.usd_inr, seed: !!h.seed });
     });
     document.getElementById("legend").innerHTML = "";
     if (pts.length < 2) {
@@ -342,12 +342,31 @@
       grid += '<line x1="' + P.l + '" y1="' + y + '" x2="' + (W - P.r) + '" y2="' + y + '" stroke="var(--line)"/>' +
         '<text x="' + (P.l - 8) + '" y="' + (y + 4) + '" text-anchor="end" fill="var(--muted)" font-size="11">' + inrFmt(v) + "</text>";
     }
-    var line = pts.map(function (p, i) { return (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(p.v).toFixed(1); }).join(" ");
+    function pathOf(arr) {
+      return arr.map(function (p, i) { return (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(p.v).toFixed(1); }).join(" ");
+    }
+    // Split into simulated-seed vs real segments (boundary = first real point).
+    var bIdx = pts.findIndex(function (p) { return !p.seed; });
+    var anySeed = pts.some(function (p) { return p.seed; });
+    var seedSeg = bIdx <= 0 ? [] : pts.slice(0, bIdx + 1);   // include boundary point for continuity
+    var realSeg = bIdx < 0 ? [] : pts.slice(bIdx);
+    var line = pathOf(pts);
     var area = "M" + X(pts[0].t).toFixed(1) + " " + (P.t + ih) + " " + line.replace("M", "L") + " L" + X(t1).toFixed(1) + " " + (P.t + ih) + " Z";
-    var dots = pts.map(function (p) {
+    var seedPath = seedSeg.length > 1 ? '<path d="' + pathOf(seedSeg) + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4" opacity="0.55"/>' : "";
+    var realPath = realSeg.length > 1 ? '<path d="' + pathOf(realSeg) + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' : "";
+    // Only dot the real points (seed stretch is too dense to dot).
+    var dots = realSeg.map(function (p) {
       return '<circle cx="' + X(p.t).toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="2.5" fill="var(--accent)"><title>' +
         new Date(p.t).toLocaleString() + " — " + inrFmt(p.v) + "/hr</title></circle>";
     }).join("");
+    // Vertical "live data starts" marker at the boundary.
+    var boundary = "";
+    if (bIdx > 0 && bIdx < pts.length) {
+      var bx = X(pts[bIdx].t);
+      boundary = '<line x1="' + bx.toFixed(1) + '" y1="' + P.t + '" x2="' + bx.toFixed(1) + '" y2="' + (P.t + ih) +
+        '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>' +
+        '<text x="' + (bx + 4).toFixed(1) + '" y="' + (P.t + 10) + '" fill="var(--muted)" font-size="10">live →</text>';
+    }
 
     var fxPath = "", fxAxis = "";
     if (showFx) {
@@ -367,7 +386,7 @@
     box.innerHTML = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none">' +
       grid +
       '<path d="' + area + '" fill="color-mix(in srgb,var(--accent) 12%,transparent)" stroke="none"/>' +
-      '<path d="' + line + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
+      seedPath + realPath + boundary +
       fxPath + dots + fxAxis + xlabels + "</svg>";
 
     var last = pts[pts.length - 1].v, first = pts[0].v, chg = last - first;
@@ -378,7 +397,8 @@
       "<span>Now: <b>" + inrFmt(last) + "</b></span>" +
       "<span>Range: <b>" + inrFmt(Math.min.apply(null, vs)) + " – " + inrFmt(Math.max.apply(null, vs)) + "</b></span>" +
       "<span>Change: <b style='color:" + (chg <= 0 ? "var(--good)" : "var(--spot)") + "'>" +
-        (chg <= 0 ? "▼ " : "▲ ") + inrFmt(Math.abs(chg)) + " (" + chgPct.toFixed(1) + "%)</b></span>";
+        (chg <= 0 ? "▼ " : "▲ ") + inrFmt(Math.abs(chg)) + " (" + chgPct.toFixed(1) + "%)</b></span>" +
+      (anySeed ? "<span style='opacity:.75'>┈ dashed = simulated seed history (live data accrues from the marker)</span>" : "");
   }
 
   // ========================================================================
