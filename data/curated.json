@@ -51,6 +51,38 @@
       ]
     },
     {
+      "provider": "DigitalOcean",
+      "provider_type": "neocloud",
+      "country": "Global",
+      "region": "NYC / TOR / AMS",
+      "url": "https://www.digitalocean.com/pricing/gpu-droplets",
+      "as_of": "2026-08-21",
+      "note": "GPU Droplets on-demand, per GPU-hour (published list; scraping is unreliable due to multiple price tiers).",
+      "offers": [
+        {"gpu": "H200",         "vram_gb": 141, "currency": "USD", "price_per_hr": 4.47, "billing": "on-demand"},
+        {"gpu": "H100",         "vram_gb": 80,  "currency": "USD", "price_per_hr": 4.41, "billing": "on-demand"},
+        {"gpu": "MI325X",       "vram_gb": 256, "currency": "USD", "price_per_hr": 3.80, "billing": "on-demand"},
+        {"gpu": "MI300X",       "vram_gb": 192, "currency": "USD", "price_per_hr": 2.59, "billing": "on-demand"},
+        {"gpu": "RTX 6000 Ada", "vram_gb": 48,  "currency": "USD", "price_per_hr": 1.57, "billing": "on-demand"},
+        {"gpu": "L40S",         "vram_gb": 48,  "currency": "USD", "price_per_hr": 1.57, "billing": "on-demand"},
+        {"gpu": "RTX 4000 Ada", "vram_gb": 20,  "currency": "USD", "price_per_hr": 0.76, "billing": "on-demand"}
+      ]
+    },
+    {
+      "provider": "Yotta Shakti Cloud",
+      "provider_type": "india_cloud",
+      "country": "IN",
+      "region": "India (Navi Mumbai)",
+      "url": "https://shakticloud.ai/pricing/",
+      "as_of": "2026-08-21",
+      "note": "Yotta (Hiranandani), Tier-IV Navi Mumbai. Native INR on-demand hourly (full-GPU rows; the portal also sells fractional H100 slices).",
+      "offers": [
+        {"gpu": "H100", "vram_gb": 80,  "currency": "INR", "price_per_hr": 356, "billing": "on-demand"},
+        {"gpu": "B200", "vram_gb": 180, "currency": "INR", "price_per_hr": 473, "billing": "on-demand"},
+        {"gpu": "L40S", "vram_gb": 48,  "currency": "INR", "price_per_hr": 137, "billing": "on-demand"}
+      ]
+    },
+    {
       "provider": "Cyfuture",
       "provider_type": "india_cloud",
       "country": "IN",

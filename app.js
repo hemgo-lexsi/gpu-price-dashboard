@@ -26,7 +26,18 @@
     var dec = v >= 1000 ? 0 : 2;
     return "₹" + Number(v).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec });
   }
-  function usdFmt(v) { return v == null ? "—" : "$" + Number(v).toFixed(v < 1 ? 3 : 2); }
+  function usdFmt(v) {
+    if (v == null) return "—";
+    var dec = v >= 1000 ? 0 : v < 1 ? 3 : 2;
+    return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  }
+  // Primary price cell in the currently selected display currency (× time unit).
+  function priceFmt(inr, usd, unit) {
+    unit = unit || 1;
+    return state.currency === "USD" ? usdFmt((usd == null ? 0 : usd) * unit) : inrFmt(inr * unit);
+  }
+  // The "other" currency, always hourly, for the reference column.
+  function altFmt(inr, usd) { return state.currency === "USD" ? inrFmt(inr) : usdFmt(usd); }
   function relTime(iso) {
     var s = (Date.now() - Date.parse(iso)) / 1000;
     if (isNaN(s)) return "";
@@ -56,7 +67,7 @@
   // ---- state ---------------------------------------------------------------
   var state = {
     q: "", gpus: new Set(), providers: new Set(), ptypes: new Set(), billings: new Set(),
-    liveOnly: false, minVram: 0, maxInr: Infinity, unit: 1,
+    liveOnly: false, minVram: 0, maxInr: Infinity, unit: 1, currency: "INR",
     sort: "inr_per_hr", dir: 1
   };
 
@@ -137,7 +148,10 @@
     });
   }
 
-  function unitLabel() { return state.unit === 1 ? "₹ / hr" : state.unit === 24 ? "₹ / day" : "₹ / month"; }
+  function unitLabel() {
+    var sym = state.currency === "USD" ? "$" : "₹";
+    return sym + (state.unit === 1 ? " / hr" : state.unit === 24 ? " / day" : " / month");
+  }
 
   function render() {
     var rows = sortRows(filtered());
@@ -150,11 +164,11 @@
     });
 
     COLS[6].t = unitLabel();
+    COLS[7].t = (state.currency === "USD" ? "₹/hr" : "USD/hr");   // reference column = the other currency
     renderHead();
 
     var body = rows.map(function (r) {
       var isBest = r.inr_per_hr === cheapest[r.gpu];
-      var inr = r.inr_per_hr * state.unit;
       var rel = r.reliability ? Math.round(r.reliability * 100) + "%" : "—";
       var srcCell = r.source_kind === "list"
         ? '<span class="tag b-list" title="' + esc(r.note || "Published list price") +
@@ -172,8 +186,8 @@
         '<td><span class="tag ' + billingClass(r.billing) + '">' + esc(r.billing) + "</span></td>" +
         "<td>" + esc(r.region) + "</td>" +
         '<td class="num"><span class="rel">' + rel + "</span></td>" +
-        '<td class="num inr">' + inrFmt(inr) + "</td>" +
-        '<td class="num muted">' + usdFmt(r.usd_per_hr) + "</td>" +
+        '<td class="num inr">' + priceFmt(r.inr_per_hr, r.usd_per_hr, state.unit) + "</td>" +
+        '<td class="num muted">' + altFmt(r.inr_per_hr, r.usd_per_hr) + "</td>" +
         "<td>" + srcCell + "</td>" +
       "</tr>";
     }).join("");
@@ -198,7 +212,7 @@
       var active = state.gpus.has(g) ? " active" : "";
       return '<div class="kpi' + active + '" data-gpu="' + esc(g) + '">' +
         '<div class="g">' + esc(g) + " · cheapest</div>" +
-        '<div class="p">' + inrFmt(c.inr_per_hr) + '<small> /hr</small></div>' +
+        '<div class="p">' + priceFmt(c.inr_per_hr, c.usd_per_hr, 1) + '<small> /hr</small></div>' +
         '<div class="d">' + esc(c.provider) + " · " + esc(c.billing) + " · " + esc(c.region) + "</div>" +
       "</div>";
     }).join("");
@@ -396,6 +410,7 @@
     document.getElementById("q").addEventListener("input", function (e) { state.q = e.target.value; render(); });
     document.getElementById("liveOnly").addEventListener("change", function (e) { state.liveOnly = e.target.checked; render(); });
     document.getElementById("unit").addEventListener("change", function (e) { state.unit = +e.target.value; render(); });
+    document.getElementById("currency").addEventListener("change", function (e) { state.currency = e.target.value; renderKpis(); render(); });
     document.getElementById("minVram").addEventListener("change", function (e) { state.minVram = +e.target.value; render(); });
     var slider = document.getElementById("maxInr");
     slider.addEventListener("input", function (e) {
@@ -406,12 +421,13 @@
     document.getElementById("csvBtn").addEventListener("click", exportCsv);
     document.getElementById("resetBtn").addEventListener("click", function () {
       state.q = ""; state.gpus.clear(); state.providers.clear(); state.ptypes.clear(); state.billings.clear();
-      state.liveOnly = false; state.minVram = 0; state.maxInr = Infinity; state.unit = 1;
-      state.sort = "inr_per_hr"; state.dir = 1;
+      state.liveOnly = false; state.minVram = 0; state.maxInr = Infinity; state.unit = 1; state.currency = "INR";
+      state.sort = "inr_per_hr", state.dir = 1;
       document.getElementById("q").value = ""; document.getElementById("liveOnly").checked = false;
       document.getElementById("minVram").value = "0"; document.getElementById("unit").value = "1";
+      document.getElementById("currency").value = "INR";
       slider.value = 100; document.getElementById("maxInrV").textContent = "Any";
-      render();
+      renderKpis(); render();
     });
   }
 

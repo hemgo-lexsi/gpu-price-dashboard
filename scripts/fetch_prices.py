@@ -488,7 +488,8 @@ def fetch_jarvislabs():
 
 
 def fetch_yotta():
-    return _scrape_provider("Yotta Labs", "india_cloud", "https://www.yottalabs.ai/pricing", "yotta", YOTTA_CFG)
+    # yottalabs.ai — a distinct (global) service, NOT the Indian Yotta/Shakti Cloud.
+    return _scrape_provider("YottaLabs.ai", "neocloud", "https://www.yottalabs.ai/pricing", "yotta", YOTTA_CFG)
 
 
 # ---------------------------------------------------------------------------
@@ -606,6 +607,44 @@ def fetch_aws():
     log(f"AWS ok: {len(recs)} offers (live)")
     return recs
 
+
+# ---------------------------------------------------------------------------
+# Oracle OCI — keyless public price list API. Prices are a uniform global list
+# (same in the Mumbai region). We target stable part numbers to avoid the
+# software/VMware/Cloud@Customer noise, and read the PAY_AS_YOU_GO rate.
+# ---------------------------------------------------------------------------
+OCI_PARTS = {  # partNumber -> (gpu, vram)
+    "B98415": ("H100", 80), "B110519": ("H200", 141), "B95907": ("A100", 80),
+    "B109479": ("L40S", 48), "B109485": ("MI300X", 192), "B110978": ("B200", 180),
+    "B110979": ("GB200", 186), "B112237": ("B300", 288), "B112140": ("GB300", 288),
+    "B112613": ("RTX PRO 6000", 96), "B111758": ("MI355X", 288), "B95909": ("A10", 24),
+}
+
+
+def fetch_oci():
+    d = json.loads(http_get("https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?currencyCode=USD"))
+    by_part = {x.get("partNumber"): x for x in d.get("items", [])}
+    recs = []
+    for part, (gpu, vram) in OCI_PARTS.items():
+        it = by_part.get(part)
+        if not it:
+            continue
+        prices = ((it.get("currencyCodeLocalizations") or [{}])[0].get("prices") or [])
+        payg = next((p for p in prices if p.get("model") == "PAY_AS_YOU_GO"), prices[0] if prices else None)
+        if not payg or not payg.get("value"):
+            continue
+        recs.append(_mk("Oracle OCI", "hyperscaler", "https://www.oracle.com/cloud/compute/gpu/",
+                        "oci", gpu, vram, "on-demand", float(payg["value"]))
+                    | {"region": "Mumbai / global list", "country": "IN"})
+    if not recs:
+        raise RuntimeError("OCI price list returned no matching GPU parts")
+    log(f"OCI ok: {len(recs)} offers (live)")
+    return recs
+
+
+# DigitalOcean is handled as a curated list vendor (data/curated.json): its page
+# has several price tiers that defeat reliable keyless scraping, and its live API
+# needs a token, so we keep verified on-demand rates instead.
 
 # ---------------------------------------------------------------------------
 # Nebius — keyless. Prices are baked into the server-rendered (SSG) HTML, so we
@@ -757,6 +796,13 @@ def apply_fx(records, fx_rates):
             r["inr_per_hr"] = round(usd * rate, 2)
         elif usd is not None and cur == "USD" and fx_rates.get("USD"):
             r["inr_per_hr"] = round(usd * fx_rates["USD"], 2)
+    # Backfill a USD figure for INR-native rows (E2E, Shakti, etc.) so the
+    # dashboard's USD view and sorting work for every row.
+    usd_rate = fx_rates.get("USD")
+    if usd_rate:
+        for r in records:
+            if r.get("usd_per_hr") is None and r.get("inr_per_hr"):
+                r["usd_per_hr"] = round(r["inr_per_hr"] / usd_rate, 4)
     return records
 
 
@@ -806,6 +852,7 @@ def main():
         ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
         ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
         ("yotta", fetch_yotta), ("nebius", fetch_nebius), ("azure", fetch_azure),
+        ("oci", fetch_oci),
     ]
     if os.getenv("GCP_API_KEY"):
         source_fns.append(("gcp", fetch_gcp))
@@ -868,8 +915,8 @@ def main():
             "list": sum(1 for r in all_records if r.get("source_kind") == "list"),
         },
         "prices": all_records,
-        "cheapest_by_gpu": {k: {"inr_per_hr": v["inr_per_hr"], "provider": v["provider"],
-                                "billing": v["billing"], "region": v["region"]}
+        "cheapest_by_gpu": {k: {"inr_per_hr": v["inr_per_hr"], "usd_per_hr": v.get("usd_per_hr"),
+                                "provider": v["provider"], "billing": v["billing"], "region": v["region"]}
                             for k, v in cheapest.items()},
     }
 

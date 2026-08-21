@@ -24,14 +24,15 @@ dated — treat them as reference and confirm on the provider's console before r
 | **Verda** (ex-DataCrunch) | On-demand **+ spot**, wide GPU range (GB300…V100) | 🟢 live · keyless API |
 | **Akamai** (Linode) | RTX 6000 / RTX 4000 Ada instances | 🟢 live · keyless API |
 | **Azure** | H100/H200/A100 per-GPU, cheapest region | 🟢 live · keyless Retail Prices API |
+| **Oracle OCI** | H100/H200/A100/B200/MI300X… (global list, incl. Mumbai) | 🟢 live · keyless price-list API |
 | **E2E Networks** | Full India lineup, **native ₹** | 🟢 live · scrapes JSON-LD offers |
 | **JarvisLabs** | India on-demand lineup | 🟢 live · scrapes pricing page (+fallback) |
-| **Yotta Labs** | Global self-serve lineup | 🟢 live · scrapes pricing page (+fallback) |
+| **YottaLabs.ai** | Global self-serve lineup | 🟢 live · scrapes pricing page (+fallback) |
 | **Nebius** | H100/H200/B200/B300… on-demand **+ spot** | 🟢 live · scrapes SSG pricing table (+fallback) |
 | **AWS** | Mumbai (ap-south-1) per-GPU, on-demand | 🟢 live *(with IAM key)* / 🟡 reference otherwise |
 | **GCP** | Per-GPU on-demand, cheapest region | 🟢 live *(with API key)* / 🟡 reference otherwise |
-| **Hyperstack** | Full global lineup (B300…A6000) | 🟡 list (published rates) |
-| **Cyfuture, AceCloud** | India H100 | 🟡 list (published rates) |
+| **Hyperstack, DigitalOcean** | Full global lineups | 🟡 list (published rates) |
+| **Yotta Shakti Cloud, Cyfuture, AceCloud** | India (₹) | 🟡 list (published rates) |
 
 ### Notes on the non-keyless sources
 
@@ -74,7 +75,7 @@ that source just shows as down and everything else keeps working.
 - 🔎 Rich filtering: GPU model, provider, provider type, billing (spot/on-demand/secure/community), min VRAM, max ₹/hr (log slider), free-text search, "live only"
 - ↕️ Sort by any column; **cheapest option per model is highlighted**
 - 📈 Price-trend chart per model (fills in as snapshots accumulate) with optional USD→INR overlay
-- 🧾 Per-hour / per-day / per-month view toggle
+- 🧾 Per-hour / per-day / per-month view toggle, and an **INR ⇄ USD** display toggle (live FX) for international teammates
 - ⭳ CSV export of the current filtered view
 - 🌗 Automatic light / dark theme, responsive, no external dependencies (works offline)
 
