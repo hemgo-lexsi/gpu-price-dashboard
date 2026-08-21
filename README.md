@@ -108,6 +108,11 @@ price API, just edit **`data/curated.json`** — copy a block, set the GPU model
 `price_per_hr`, `currency`, and bump `as_of` to the date you verified it. The
 dashboard and the KPI cards pick it up on the next run.
 
+## Making it org-only later
+
+To restrict viewing to your GitHub org (private Pages), see **[MIGRATION.md](MIGRATION.md)** —
+a ~5-minute checklist. The app is URL-relative, so no code changes are needed.
+
 ## How updating works
 
 The scheduled Action runs `fetch_prices.py`, which is resilient: if one source is
