@@ -5,7 +5,7 @@ GPU Price Dashboard - data pipeline.
 Fetches (each source isolated; one failing never kills the run):
   * Live FX (USD->INR, EUR->INR) from Frankfurter / ECB
   * Vast.ai marketplace (on-demand + spot), RunPod, Verda/DataCrunch (on-demand +
-    spot), Akamai/Linode — all keyless JSON APIs
+    spot), Akamai/Linode, Runcrate: all keyless JSON APIs
   * E2E (JSON-LD, native INR), JarvisLabs, Yotta Labs — scraped public pricing pages
   * Optional live AWS (boto3 + IAM key) and GCP (Billing Catalog API key), only
     when their credentials are present in the environment
@@ -380,6 +380,39 @@ def fetch_akamai():
             best[key] = rec
     recs = list(best.values())
     log(f"Akamai ok: {len(recs)} offers")
+    return recs
+
+
+# ---------------------------------------------------------------------------
+# Runcrate: public keyless JSON feed. min_price_hr is the live on-demand price
+# for one GPU for one hour in USD; the pipeline's usual USD->INR FX applies it.
+# ---------------------------------------------------------------------------
+RUNCRATE_TYPES = {  # feed gpu_type -> name handed to normalize_gpu
+    "B300": "B300", "B200": "B200", "H200": "H200", "H200_nvl": "H200 NVL",
+    "L40S": "L40S", "L40": "L40", "RTX5090": "RTX 5090", "RTX4090": "RTX 4090",
+    "RTX3090": "RTX 3090", "RTX6000Ada": "RTX 6000 Ada", "RTXPro6000": "RTX PRO 6000",
+    "A6000": "RTX A6000", "A40": "A40", "L4": "L4", "A10": "A10",
+}
+
+
+def fetch_runcrate():
+    data = json.loads(http_get("https://www.runcrate.ai/api/gpu-pricing"))
+    recs = []
+    for g in data.get("gpus", []):
+        raw = RUNCRATE_TYPES.get(g.get("gpu_type"))
+        # The feed can keep a stale price for an out-of-stock type, and it does
+        # not say SXM vs PCIe for H100/A100 (V100 has two sizes): those stay out.
+        if not raw or (g.get("available_options") or 0) < 1:
+            continue
+        price = g.get("min_price_hr")
+        if not isinstance(price, (int, float)) or price <= 0:
+            continue
+        m = re.match(r"(\d+)\s*GB$", str(g.get("vram") or ""))
+        rec = _mk("Runcrate", "neocloud", "https://www.runcrate.ai/pricing", "runcrate",
+                  raw, int(m.group(1)) if m else None, "on-demand", price)
+        rec["region"] = "Global"
+        recs.append(rec)
+    log(f"Runcrate ok: {len(recs)} offers")
     return recs
 
 
@@ -850,7 +883,8 @@ def main():
     # credentials are present as environment variables / GitHub secrets.
     source_fns = [
         ("vast.ai", fetch_vast), ("runpod", fetch_runpod), ("verda", fetch_verda),
-        ("akamai", fetch_akamai), ("e2e", fetch_e2e), ("jarvislabs", fetch_jarvislabs),
+        ("akamai", fetch_akamai), ("runcrate", fetch_runcrate), ("e2e", fetch_e2e),
+        ("jarvislabs", fetch_jarvislabs),
         ("yotta", fetch_yotta), ("nebius", fetch_nebius), ("azure", fetch_azure),
         ("oci", fetch_oci),
     ]
