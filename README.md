@@ -23,6 +23,7 @@ dated — treat them as reference and confirm on the provider's console before r
 | **RunPod** | Secure + community prices for ~48 GPU types | 🟢 live · keyless API |
 | **Verda** (ex-DataCrunch) | On-demand **+ spot**, wide GPU range (GB300…V100) | 🟢 live · keyless API |
 | **Akamai** (Linode) | RTX 6000 / RTX 4000 Ada instances | 🟢 live · keyless API |
+| **Runcrate** | On-demand, live offers only (H100/A100 skipped: the feed does not say SXM or PCIe) | 🟢 live · keyless API |
 | **Azure** | H100/H200/A100 per-GPU, cheapest region | 🟢 live · keyless Retail Prices API |
 | **Oracle OCI** | H100/H200/A100/B200/MI300X… (global list, incl. Mumbai) | 🟢 live · keyless price-list API |
 | **E2E Networks** | Full India lineup, **native ₹** | 🟢 live · scrapes JSON-LD offers |

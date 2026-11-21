@@ -248,7 +248,7 @@
 
   // ---- top meta + footer ---------------------------------------------------
   var SOURCE_LABEL = {
-    "vast.ai": "Vast.ai", "runpod": "RunPod", "verda": "Verda", "akamai": "Akamai",
+    "vast.ai": "Vast.ai", "runpod": "RunPod", "verda": "Verda", "akamai": "Akamai", "runcrate": "Runcrate",
     "e2e": "E2E", "jarvislabs": "JarvisLabs", "yotta": "Yotta Labs",
     "nebius": "Nebius", "azure": "Azure", "gcp": "GCP", "aws": "AWS", "curated": "List prices"
   };
@@ -279,7 +279,7 @@
     document.getElementById("footer").innerHTML =
       "<p><b>How to read this:</b> Every price is normalised to <b>one GPU for one hour</b> and converted to INR at the live " +
       "USD→INR rate shown above (source: Frankfurter / ECB). <span style='color:var(--live)'><b>Live</b></span> prices are fetched " +
-      "automatically each run — from the <b>Vast.ai</b> &amp; <b>RunPod</b> APIs, the <b>Verda (DataCrunch)</b> and <b>Akamai (Linode)</b> " +
+      "automatically each run, from the <b>Vast.ai</b> &amp; <b>RunPod</b> APIs, the <b>Verda (DataCrunch)</b>, <b>Akamai (Linode)</b> and <b>Runcrate</b> " +
       "APIs, and by scraping the public pricing pages of <b>E2E</b> (native ₹), <b>JarvisLabs</b> and <b>Yotta Labs</b>. " +
       "<span style='color:var(--list)'><b>List</b></span> prices (Nebius, AWS, GCP, Azure) are published/reference rates verified on the " +
       "date shown — AWS &amp; GCP can be switched to true-live with a free credential (see the repo README). Always confirm on the " +
